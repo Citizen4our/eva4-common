@@ -17,7 +17,7 @@ pub struct FrameHeader {
     // bits
     // 0 - key frame
     // 1-7 - reserved
-    metadata: u8,
+    flags: u8,
 }
 
 impl FrameHeader {
@@ -28,11 +28,11 @@ impl FrameHeader {
             format: format as u8,
             width,
             height,
-            metadata: 0,
+            flags: 0,
         }
     }
     pub fn set_key_frame(&mut self) {
-        self.metadata |= 0b0000_0001;
+        self.flags |= 0b0000_0001;
     }
     pub fn from_slice(slice: &[u8]) -> Result<Self, binrw::Error> {
         let mut cursor = std::io::Cursor::new(slice);
@@ -51,6 +51,10 @@ impl FrameHeader {
         let width = info.width().try_into()?;
         let height = info.height().try_into()?;
         Ok(Self::new(codec, width, height))
+    }
+    pub fn try_to_caps(&self) -> EResult<gst::Caps> {
+        let format = self.format()?;
+        Ok(format.into_caps_with_dimensions(self.width.into(), self.height.into()))
     }
     /// # Panics
     ///
@@ -73,7 +77,7 @@ impl FrameHeader {
         self.height
     }
     pub fn is_key_frame(&self) -> bool {
-        self.metadata & 0b0000_0001 != 0
+        self.flags & 0b0000_0001 != 0
     }
     pub fn is_version_valid(&self) -> bool {
         self.version == EVA_MULTIMEDIA_VERSION
@@ -99,6 +103,9 @@ pub const EVA_MULTIMEDIA_VERSION: u8 = 1;
 )]
 #[repr(u8)]
 pub enum VideoFormat {
+    #[strum(serialize = "video/x-raw")]
+    #[serde(rename = "raw")]
+    Raw = 0,
     #[strum(serialize = "video/x-h264")]
     #[serde(rename = "h264")]
     H264 = 10,
@@ -121,6 +128,7 @@ impl TryFrom<u8> for VideoFormat {
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
+            0 => Ok(VideoFormat::Raw),
             10 => Ok(VideoFormat::H264),
             11 => Ok(VideoFormat::H265),
             12 => Ok(VideoFormat::VP8),
@@ -136,6 +144,21 @@ impl TryFrom<u8> for VideoFormat {
 
 impl VideoFormat {
     pub fn into_caps(self) -> gst::Caps {
+        if self == VideoFormat::Raw {
+            return Caps::builder(self.to_string())
+                .field("format", "RGB")
+                .build();
+        }
+        Caps::builder(self.to_string()).build()
+    }
+    pub fn into_caps_with_dimensions(self, width: u32, height: u32) -> gst::Caps {
+        if self == VideoFormat::Raw {
+            return Caps::builder(self.to_string())
+                .field("format", "RGB")
+                .field("width", i32::try_from(width).unwrap_or(i32::MAX))
+                .field("height", i32::try_from(height).unwrap_or(i32::MAX))
+                .build();
+        }
         Caps::builder(self.to_string()).build()
     }
     pub fn all_caps() -> gst::Caps {

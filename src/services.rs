@@ -130,6 +130,8 @@ pub struct Initial {
     id: String,
     command: String,
     #[serde(default)]
+    env: HashMap<String, String>,
+    #[serde(default)]
     prepare_command: Option<String>,
     data_path: String,
     timeout: Timeout,
@@ -185,6 +187,7 @@ impl Initial {
             system_name: system_name.to_owned(),
             id: id.to_owned(),
             command: command.to_owned(),
+            env: <_>::default(),
             prepare_command: prepare_command.map(ToOwned::to_owned),
             data_path: data_path.to_owned(),
             timeout: timeout.clone(),
@@ -207,6 +210,10 @@ impl Initial {
     }
     pub fn with_restart_delay(mut self, delay: Duration) -> Self {
         self.restart_delay = delay;
+        self
+    }
+    pub fn with_env(mut self, env: HashMap<String, String>) -> Self {
+        self.env = env;
         self
     }
     #[inline]
@@ -240,6 +247,9 @@ impl Initial {
     }
     pub fn realtime(&self) -> &RealtimeConfig {
         &self.realtime
+    }
+    pub fn env(&self) -> &HashMap<String, String> {
+        &self.env
     }
     #[inline]
     pub fn prepare_command(&self) -> Option<&str> {
@@ -528,7 +538,7 @@ impl Initial {
     #[cfg(not(target_os = "linux"))]
     #[inline]
     pub fn drop_privileges(&self) -> EResult<()> {
-        eprintln(!"WARNING privileges not dropped");
+        eprintln!("WARNING privileges not dropped");
         Ok(())
     }
     pub fn into_legacy_compat(mut self) -> Self {
@@ -554,7 +564,7 @@ impl Initial {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "freebsd"))]
 pub fn get_system_user(user: &str) -> EResult<nix::unistd::User> {
     let u = nix::unistd::User::from_name(user)
         .map_err(|e| Error::failed(format!("failed to get the system user {}: {}", user, e)))?
@@ -562,7 +572,7 @@ pub fn get_system_user(user: &str) -> EResult<nix::unistd::User> {
     Ok(u)
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "freebsd"))]
 pub fn get_system_group(group: &str) -> EResult<nix::unistd::Group> {
     let g = nix::unistd::Group::from_name(group)
         .map_err(|e| Error::failed(format!("failed to get the system group {}: {}", group, e)))?
